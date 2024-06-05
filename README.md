@@ -1,4 +1,4 @@
-# 4WD Smart Robotic Car by Freenove
+# 4WD Smart Robotic Car using Raspberry Pi
 ## _Fall 2023 for INFO 3150_
 
 ## The purpose of this project is to demonstrate the following functionalities:
@@ -21,8 +21,9 @@
 * Clean the code
 * Ball tracking
 * Searching for a face while car moves
+
 ## Manual
 * Python must be installed
 * Download external remote program RealVNC(https://www.realvnc.com/en/connect/download/viewer/).
-* Launch program
+* Launch program by following the documentation (https://help.realvnc.com/hc/en-us/articles/360002249917-RealVNC-Connect-and-Raspberry-Pi#getting-connected-to-your-raspberry-pi-0-1)
 * Connect through Local IP address on the same network and run following files: ball_tracking.py, human_faces.py, obstacle_avoidance.py
