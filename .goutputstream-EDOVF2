@@ -1,0 +1,274 @@
+import time
+from Motor import *
+import RPi.GPIO as GPIO
+from servo import *
+from PCA9685 import PCA9685
+import cv2
+import numpy as np
+from picamera2 import Picamera2
+from obstacle_avoidance import Ultrasonic
+
+cv2.startWindowThread()
+
+speed = 800
+window_center = 320
+center_buffer = 10
+pwm_bound = float(1500)
+camera_bound = float(640)
+kp = pwm_bound / camera_bound
+left_bound = int(window_center - center_buffer)
+right_bound = int(window_center + center_buffer)
+error = 0
+ball_pixel = 0
+
+class BallTracking:
+    def __init__(self):        
+        GPIO.setwarnings(False)        
+        self.trigger_pin = 27
+        self.echo_pin = 22
+        self.MAX_DISTANCE = 500             # define the maximum measuring distance, unit: cm
+        self.timeOut = self.MAX_DISTANCE*30   # calculate timeout according to the maximum measuring distance
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(self.trigger_pin,GPIO.OUT)
+        GPIO.setup(self.echo_pin,GPIO.IN)
+        self.pwm = PCA9685(0x40, debug=True)
+        self.pwm.setPWMFreq(50)
+        self.time_proportion = 3
+        self.adc = Adc()
+        self.motor = Motor()
+        self.ultrasonic=Ultrasonic()
+        self.servo=Servo()
+        self.PWM=Motor()
+        self.pwm_S=Servo()
+        
+    def update_pwm(self, right_pwm, left_pwm):
+        self.motor.right_Upper_Wheel(right_pwm)
+        self.motor.left_Upper_Wheel(left_pwm)
+    
+    def find_ball(self):
+        global ball_pixel
+        print("find ball")
+        image = cv2.imread('image.jpg')
+        result = image.copy()
+        # blurred = cv2.GaussianBlur(image, (11, 11), 0)
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    
+        mask = cv2.inRange(hsv, lower_red, upper_red)
+        # mask = cv2.erode(mask, None, iterations=2)
+        # mask = cv2.dilate(mask, None, iterations=2)
+                  
+        result = cv2.bitwise_and(result, result, mask=mask)
+        
+        cv2.imshow('mask', mask)
+
+        gray = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
+        circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 3, 500, minRadius = 10, maxRadius = 200, param1 = 100, param2 = 60)
+        print("Number of circles:", len(circles))
+        print("Circles:", circles)
+        if circles is not None:
+            circles = np.round(circles[0,:]).astype("int")
+            for (x,y, radius) in circles:
+                cv2.circle(result, (x,y), radius, (0,255,0), 4)
+                if (radius > 50):
+                    print("radius x")
+                    ball_pixel = x
+                    print(ball_pixel)
+                else:
+                    print("went to 0")
+                    ball_pixel = 0
+        return circles
+
+    def pulseIn(self,pin,level,timeOut): # obtain pulse time of a pin under timeOut
+        t0 = time.time()
+        while(GPIO.input(pin) != level):
+            if((time.time() - t0) > timeOut*0.000001):
+                return 0;
+        t0 = time.time()
+        while(GPIO.input(pin) == level):
+            if((time.time() - t0) > timeOut*0.000001):
+                return 0;
+        pulseTime = (time.time() - t0)*1000000
+        return pulseTime
+    
+    def get_distance(self):     # get the measurement results of ultrasonic module,with unit: cm
+        distance_cm=[0,0,0,0,0]
+        for i in range(5):
+            GPIO.output(self.trigger_pin,GPIO.HIGH)      # make trigger_pin output 10us HIGH level 
+            time.sleep(0.00001)     # 10us
+            GPIO.output(self.trigger_pin,GPIO.LOW) # make trigger_pin output LOW level 
+            pingTime = self.pulseIn(self.echo_pin,GPIO.HIGH,self.timeOut)   # read plus time of echo_pin
+            distance_cm[i] = pingTime * 340.0 / 2.0 / 10000.0     # calculate distance with sound speed 340m/s
+        distance_cm=sorted(distance_cm)
+        return  int(distance_cm[2])
+    
+    def run_motor(self,L,M,R):
+        if (L < 30 and M < 30 and R <30) or M < 30 :
+            print("dead end")
+            self.PWM.setMotorModel(-1450,-1450,-1450,-1450) 
+            time.sleep(0.1)   
+            if L < R:
+                self.PWM.setMotorModel(1450,1450,-1450,-1450)
+            else :
+                self.PWM.setMotorModel(-1450,-1450,1450,1450)
+        elif L < 30 and M < 30:
+            print("turn right")
+            self.PWM.setMotorModel(1500,1500,-1500,-1500)
+        elif R < 30 and M < 30:
+            print("turn left")
+            self.PWM.setMotorModel(-1500,-1500,1500,1500)
+        elif L < 20 :
+            print("L<20")
+            self.PWM.setMotorModel(2000,2000,-500,-500)
+            if L < 10 :
+                print("L<10")
+                self.PWM.setMotorModel(1500,1500,-1000,-1000)
+        elif R < 20 :
+            print("R<20")
+            self.PWM.setMotorModel(-250,-250,2000,2000)
+            if R < 10 :
+                print("backward and go left")
+                self.PWM.setMotorModel(-2000,0,-2000,0)  
+        else :
+            print("freedom")
+            self.PWM.setMotorModel(800,800,800,800)
+                    
+    def run(self):  
+        while(True):
+            for i in range(30,151,60):
+                self.pwm_S.setServoPwm('0',i)
+                if i==30:
+                    L = self.get_distance()
+                    ball.find_ball()
+                    print(ball_pixel)
+                    if (ball_pixel != 0):
+                        break
+                elif i==90:
+                    M = self.get_distance()
+                    ball.find_ball()
+                    if (ball_pixel != 0):
+                        break
+                else:
+                    R = self.get_distance()
+                    ball.find_ball()
+                    if (ball_pixel != 0):
+                        break
+                    self.run_motor(L,M,R)
+            if (ball_pixel != 0):
+                break
+ 
+            for i in range(90,30,-60):
+                print("2n attempt")
+                self.pwm_S.setServoPwm('0',i)
+                time.sleep(0.2)
+                if i==30:
+                    L = self.get_distance()
+                    ball.find_ball()
+                    if (ball_pixel != 0):
+                        break
+                elif i==90:
+                    M = self.get_distance()
+                    ball.find_ball()
+                    if (ball_pixel != 0):
+                        break
+                else:
+                    R = self.get_distance()
+                    ball.find_ball()
+                    if (ball_pixel != 0):
+                        break
+                self.run_motor(L,M,R)
+            if (ball_pixel != 0):
+                break
+                
+            for i in range(30,151,60):
+                print("3rd attempt")
+                self.pwm_S.setServoPwm('0',i)
+                time.sleep(0.2)
+                if i==30:
+                    L = self.get_distance()
+                    ball.find_ball()
+                    if (ball_pixel != 0):
+                        break
+                elif i==90:
+                    M = self.get_distance()
+                    ball.find_ball()
+                    if (ball_pixel != 0):
+                        break
+                else:
+                    R = self.get_distance()
+                    ball.find_ball()
+                    if (ball_pixel != 0):
+                        break
+                self.run_motor(L,M,R)
+            if (ball_pixel != 0):
+                break
+
+                
+ball=BallTracking()
+
+if __name__ == '__main__':
+    print("Starting ball tracking...")
+    time.sleep(1)
+    picam2 = Picamera2()
+    picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (640, 480)}))
+    picam2.start()
+    print("Starting camera...")
+    time.sleep(1)
+    
+    lower_red = np.array([19,42,61])
+    upper_red = np.array([60,255,211])
+        
+    try:
+        while(True):
+            im = picam2.capture_file("image.jpg")
+            print("Finding red ball...")
+            
+            circles = ball.find_ball()
+            
+            if (ball_pixel == 0):
+                print("Ball not found")
+                error = 0
+                PWM.setMotorModel(0,0,0,0)
+                ball.run()
+            elif ((ball_pixel < left_bound) or (ball_pixel > right_bound)):
+                print("Ball found")
+                error = window_center - ball_pixel
+                pwm_out = abs(error * kp) 
+                turn = pwm_out + speed
+                if ball_pixel < left_bound:
+                    print("left")
+                    if (circles[0,2] > 50 and ball_pixel) < 110:
+                        print(ball_pixel) 
+                        print(pwm_out, turn, speed)
+                        ball.update_pwm(speed, 1000)
+                    else:
+                        print(pwm_out, turn, speed)
+                        ball.update_pwm(turn, speed)
+                elif ball_pixel > right_bound:
+                    print("right side")
+                    print("circles[0,2]:", circles[0,2])
+                    print("ball_pixel:", ball_pixel)
+                    if (circles[0,2] > 50 and ball_pixel > 540):
+                        print(ball_pixel)
+                        print(pwm_out, turn, speed)
+                        ball.update_pwm(1000, speed)
+                    else:
+                        print("right side else")
+                        print(pwm_out, turn, speed)
+                        ball.update_pwm(speed, turn)
+            else:	
+                print("middle")
+                if (circles[0,2] < 40):
+                    print(pwm_out, turn, speed)
+                    ball.update_pwm(speed, speed)
+                else:
+                    PWM.setMotorModel(0,0,0,0)
+
+    except KeyboardInterrupt:
+        print("Exiting program")
+
+    finally:
+        GPIO.cleanup()
+        PWM.setMotorModel(0,0,0,0)
+        cv2.destroyAllWindows()
+        Servo.setServoPwm(servo,'0',90)
+
