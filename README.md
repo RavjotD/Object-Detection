@@ -21,3 +21,8 @@
 * Clean the code
 * Ball tracking
 * Searching for a face while car moves
+## Manual
+* Python must be installed
+* Download external remote program RealVNC(https://www.realvnc.com/en/connect/download/viewer/).
+* Launch program
+* Connect through Local IP address on the same network and run following files: ball_tracking.py, human_faces.py, obstacle_avoidance.py
